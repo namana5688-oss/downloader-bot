@@ -21,16 +21,6 @@ def start(message):
         "YouTube, Instagram, TikTok, Pinterest و بیشتر!"
     )
 
-@bot.message_handler(commands=['help'])
-def help(message):
-    bot.reply_to(message,
-        "طرز استفاده:\n\n"
-        "1. لینک رو کپی کن\n"
-        "2. اینجا بفرست\n"
-        "3. صبر کن دانلود بشه\n"
-        "4. فایلت رو دریافت کن!"
-    )
-
 @bot.message_handler(func=lambda m: m.text and m.text.startswith('http'))
 def handle_link(message):
     url = message.text.strip()
@@ -43,6 +33,10 @@ def handle_link(message):
                 'quiet': True,
                 'noplaylist': True,
                 'max_filesize': 45 * 1024 * 1024,
+                'extractor_args': {'youtube': {'player_client': ['android']}},
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36',
+                },
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
@@ -76,5 +70,3 @@ def unknown(message):
 
 print("ربات شروع به کار کرد...")
 bot.polling(none_stop=True)
-O
-
