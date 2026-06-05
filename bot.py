@@ -2,16 +2,14 @@ import telebot
 import yt_dlp
 import os
 import tempfile
-import requests
 from pathlib import Path
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 BOT_TOKEN = "8764355663:AAGe2uMmOBPCEqsPTFzlr6PJoALQEuLzEps"
 MAX_FILE_MB = 50
+BOT_ID = "@thebestdownloader_bot"
 
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# Store user requests temporarily
 user_requests = {}
 
 def format_size(b):
@@ -31,16 +29,33 @@ def get_video_info(url):
         return info
 
 def download_video(url, quality, tmpdir):
-    if quality == 'audio':
+    if quality == 'audio_128':
         fmt = 'bestaudio/best'
+        postprocessors = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '128'}]
+    elif quality == 'audio_320':
+        fmt = 'bestaudio/best'
+        postprocessors = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '320'}]
+    elif quality == '144':
+        fmt = 'best[height<=144]/worst'
+        postprocessors = []
+    elif quality == '240':
+        fmt = 'best[height<=240]/best[height<=360]'
+        postprocessors = []
     elif quality == '360':
-        fmt = 'best[height<=360][filesize<45M]/best[height<=360]'
+        fmt = 'best[height<=360]'
+        postprocessors = []
+    elif quality == '480':
+        fmt = 'best[height<=480]'
+        postprocessors = []
     elif quality == '720':
         fmt = 'best[height<=720][filesize<45M]/best[height<=720]'
+        postprocessors = []
     elif quality == '1080':
         fmt = 'best[height<=1080][filesize<45M]/best[height<=1080]'
+        postprocessors = []
     else:
         fmt = 'best[filesize<45M]/best'
+        postprocessors = []
 
     ydl_opts = {
         'outtmpl': os.path.join(tmpdir, '%(title).50s.%(ext)s'),
@@ -53,18 +68,25 @@ def download_video(url, quality, tmpdir):
             'User-Agent': 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36',
         },
     }
-
-    if quality == 'audio':
-        ydl_opts['postprocessors'] = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-        }]
+    if postprocessors:
+        ydl_opts['postprocessors'] = postprocessors
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
 
     files = list(Path(tmpdir).iterdir())
     return str(files[0]) if files else None
+
+def download_thumbnail(url, tmpdir):
+    try:
+        import requests
+        r = requests.get(url, timeout=10)
+        thumb_path = os.path.join(tmpdir, 'thumb.jpg')
+        with open(thumb_path, 'wb') as f:
+            f.write(r.content)
+        return thumb_path
+    except:
+        return None
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -73,7 +95,8 @@ def start(message):
         "📥 لینک ویدیو یا عکست رو بفرست تا دانلودش کنم.\n\n"
         "پشتیبانی از:\n"
         "▸ YouTube\n▸ Instagram\n▸ TikTok\n"
-        "▸ Pinterest\n▸ Twitter/X\n▸ و ۱۰۰۰+ سایت دیگه!",
+        "▸ Pinterest\n▸ Twitter/X\n▸ و ۱۰۰۰+ سایت دیگه!\n\n"
+        f"🆔 {BOT_ID}",
         parse_mode="Markdown"
     )
 
@@ -96,72 +119,41 @@ def handle_link(message):
 
     try:
         info = get_video_info(url)
-
         title = info.get('title', 'ویدیو')
         description = info.get('description', '')
-        thumbnail = info.get('thumbnail', None)
-        duration = info.get('duration', 0)
-        uploader = info.get('uploader', '')
 
-        if duration:
-            mins = duration // 60
-            secs = duration % 60
-            dur_text = f"⏱ {mins}:{secs:02d}"
-        else:
-            dur_text = ""
+        desc_short = description[:300] + "..." if len(description) > 300 else description
 
-        desc_short = description[:200] + "..." if len(description) > 200 else description
+        user_requests[message.chat.id] = {
+            'url': url,
+            'title': title,
+            'description': desc_short,
+            'thumbnail': info.get('thumbnail', None)
+        }
 
-        caption = f"🎬 *{title}*\n"
-        if uploader:
-            caption += f"👤 {uploader}\n"
-        if dur_text:
-            caption += f"{dur_text}\n"
-        if desc_short:
-            caption += f"\n📝 {desc_short}"
-
-        # Store request
-        user_requests[message.chat.id] = url
-
-        # Quality keyboard
         markup = InlineKeyboardMarkup()
         markup.row(
-            InlineKeyboardButton("🎵 فقط صدا (MP3)", callback_data=f"dl_audio_{message.chat.id}")
+            InlineKeyboardButton("🎵 MP3 128k", callback_data=f"dl_audio_128_{message.chat.id}"),
+            InlineKeyboardButton("🎵 MP3 320k", callback_data=f"dl_audio_320_{message.chat.id}")
         )
         markup.row(
-            InlineKeyboardButton("📱 360p", callback_data=f"dl_360_{message.chat.id}"),
-            InlineKeyboardButton("🖥 720p", callback_data=f"dl_720_{message.chat.id}")
+            InlineKeyboardButton("📱 144p", callback_data=f"dl_144_{message.chat.id}"),
+            InlineKeyboardButton("📱 240p", callback_data=f"dl_240_{message.chat.id}"),
+            InlineKeyboardButton("📱 360p", callback_data=f"dl_360_{message.chat.id}")
         )
         markup.row(
+            InlineKeyboardButton("🖥 480p", callback_data=f"dl_480_{message.chat.id}"),
+            InlineKeyboardButton("🖥 720p", callback_data=f"dl_720_{message.chat.id}"),
             InlineKeyboardButton("🎯 1080p", callback_data=f"dl_1080_{message.chat.id}")
         )
 
-        bot.delete_message(message.chat.id, status.message_id)
-
-        # Send thumbnail with info
-        if thumbnail:
-            try:
-                bot.send_photo(
-                    message.chat.id,
-                    thumbnail,
-                    caption=caption,
-                    parse_mode="Markdown",
-                    reply_markup=markup
-                )
-            except:
-                bot.send_message(
-                    message.chat.id,
-                    caption,
-                    parse_mode="Markdown",
-                    reply_markup=markup
-                )
-        else:
-            bot.send_message(
-                message.chat.id,
-                caption,
-                parse_mode="Markdown",
-                reply_markup=markup
-            )
+        bot.edit_message_text(
+            f"🎬 *{title}*\n\nکیفیت مورد نظر رو انتخاب کن:",
+            message.chat.id,
+            status.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
 
     except Exception as e:
         bot.edit_message_text("❌ خطا در دریافت اطلاعات. لینک ممکنه خصوصی یا محدود باشه.", message.chat.id, status.message_id)
@@ -169,48 +161,74 @@ def handle_link(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('dl_'))
 def handle_download(call):
     parts = call.data.split('_')
-    quality = parts[1]
-    chat_id = int(parts[2])
+    
+    if parts[1] == 'audio':
+        quality = f"audio_{parts[2]}"
+        chat_id = int(parts[3])
+    else:
+        quality = parts[1]
+        chat_id = int(parts[2])
 
-    url = user_requests.get(chat_id)
-    if not url:
+    data = user_requests.get(chat_id)
+    if not data:
         bot.answer_callback_query(call.id, "لینک پیدا نشد!")
         return
 
+    url = data['url']
+    title = data['title']
+    description = data['description']
+    thumbnail_url = data['thumbnail']
+
     bot.answer_callback_query(call.id, "در حال دانلود...")
-    status = bot.send_message(chat_id, "⏳ در حال دانلود... صبر کن.")
+    bot.edit_message_text("⏳ در حال دانلود... صبر کن.", chat_id, call.message.message_id)
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = download_video(url, quality, tmpdir)
 
             if not file_path:
-                bot.edit_message_text("❌ دانلود ناموفق بود.", chat_id, status.message_id)
+                bot.edit_message_text("❌ دانلود ناموفق بود.", chat_id, call.message.message_id)
                 return
 
             file_size = os.path.getsize(file_path)
             ext = Path(file_path).suffix.lower()
 
             if file_size > MAX_FILE_MB * 1024 * 1024:
-                bot.edit_message_text(f"❌ فایل خیلی بزرگه ({format_size(file_size)}). حداکثر ۵۰MB.", chat_id, status.message_id)
+                bot.edit_message_text(f"❌ فایل خیلی بزرگه ({format_size(file_size)}). حداکثر ۵۰MB.", chat_id, call.message.message_id)
                 return
 
-            bot.edit_message_text(f"📤 در حال آپلود ({format_size(file_size)})...", chat_id, status.message_id)
+            bot.edit_message_text(f"📤 در حال آپلود ({format_size(file_size)})...", chat_id, call.message.message_id)
+
+            # Caption with title and bot ID
+            caption = f"{title}\n\n🆔 {BOT_ID}"
+
+            # Download thumbnail
+            thumb_path = None
+            if thumbnail_url:
+                thumb_path = download_thumbnail(thumbnail_url, tmpdir)
 
             with open(file_path, 'rb') as f:
-                if quality == 'audio' or ext in ['.mp3', '.m4a', '.ogg']:
-                    bot.send_audio(chat_id, f, caption="✅ دانلود شد!")
+                if 'audio' in quality or ext in ['.mp3', '.m4a', '.ogg']:
+                    bot.send_audio(chat_id, f, caption=caption)
                 elif ext in ['.mp4', '.mkv', '.webm', '.mov']:
-                    bot.send_video(chat_id, f, caption="✅ دانلود شد!")
+                    thumb_file = open(thumb_path, 'rb') if thumb_path else None
+                    bot.send_video(
+                        chat_id, f,
+                        caption=caption,
+                        thumb=thumb_file,
+                        supports_streaming=True
+                    )
+                    if thumb_file:
+                        thumb_file.close()
                 elif ext in ['.jpg', '.jpeg', '.png', '.webp']:
-                    bot.send_photo(chat_id, f, caption="✅ دانلود شد!")
+                    bot.send_photo(chat_id, f, caption=caption)
                 else:
-                    bot.send_document(chat_id, f, caption="✅ دانلود شد!")
+                    bot.send_document(chat_id, f, caption=caption)
 
-            bot.delete_message(chat_id, status.message_id)
+            bot.delete_message(chat_id, call.message.message_id)
 
     except Exception as e:
-        bot.edit_message_text("❌ خطا در دانلود. لینک ممکنه خصوصی یا محدود باشه.", chat_id, status.message_id)
+        bot.edit_message_text("❌ خطا در دانلود. لینک ممکنه خصوصی یا محدود باشه.", chat_id, call.message.message_id)
 
 @bot.message_handler(func=lambda m: True)
 def unknown(message):
